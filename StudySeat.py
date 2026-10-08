@@ -152,7 +152,9 @@ def parse_datetime(s: str) -> datetime:
 # datetime 객체를 YYYY-MM-DD HH:MM으로 변환(파일 저장, 출력용)
 # None = 페널티 없음, 빈 좌석, 최종 기록 없음 등
 def fmt_datetime(dt: Optional[datetime]) -> str:
-    return DEFAULT_DT if dt is None else dt.strftime("%Y-%m-%d %H:%M")
+    if dt is None:
+        return DEFAULT_DT
+    return f"{dt.year:04d}-{dt.month:02d}-{dt.day:02d} {dt.hour:02d}:{dt.minute:02d}"
 
 # 데이터 파일 필드를 datetime으로 변환, 0000-00-00 00:00은 datetime으로 생성 불가하므로 None으로 변환
 def load_datetime(s: str, allow_default: bool = False) -> Optional[datetime]:
@@ -399,41 +401,105 @@ def read_sub(msg: str) -> str:
 
 
 # ───────────────────────── 일시 입력 / 로그인 프롬프트 (담당: 로그인·일시) ─────────────────────────
+def _entry_text(s: str) -> str:
+    """두 진입 프롬프트의 단어/횡공백류 문법 검사. 내부 공백은 보존한다."""
+    if any(c in "\r\n" or (not c.isspace() and not c.isprintable()) for c in s):
+        raise ElemSyntaxError(s)
+    return s.strip()
+
+
 def prompt_datetime(store: Store) -> None:
-    # TODO(로그인·일시): 6.1의 오류 메시지 구분, 최종 기록 일시 비교, 안내 출력으로 교체
-    # 완료 조건: store.now 설정 후 반환, quit이면 sys.exit()
-    # 임시 구현: 형식이 맞을 때까지 반복
+    """유효하고 최종 기록보다 늦은 일시를 수락한 경우에만 반환한다."""
     while True:
-        s = input("현재 일시를 입력하시오: ")
-        if [CMD_LOOKUP.get(t) for t in tokenize(s)] == ["quit"]:
-            sys.exit()
         try:
-            store.now = parse_datetime(s.strip())
-            return
-        except (ElemSyntaxError, ElemSemanticError):
-            print("error: 올바른 형식의 날짜와 시간을 입력하시오(YYYY-MM-DD HH:MM)")
+            s = _entry_text(input("현재 일시를 입력하시오: "))
+            if CMD_LOOKUP.get(s) == "quit":
+                sys.exit()
+            candidate = parse_datetime(s)
+        except ElemSyntaxError:
+            print("error: 올바른 형식의 날짜와 시간을 입력하시오( YYYY-MM-DD HH:MM )")
+            continue
+        except ElemSemanticError:
+            print("error: 실제 존재하는 일시를 입력하시오.")
+            continue
+        if store.last_dt is not None and candidate <= store.last_dt:
+            print(f"error: 최종 기록 일시({fmt_datetime(store.last_dt)})보다 늦은 일시를 입력하시오.")
+            continue
+        store.now = candidate
+        print(f"현재 일시: {fmt_datetime(candidate)}")
+        return
+
+
+def cmd_signup(store: Store, args: List[str]) -> None:
+    """회원 정보를 저장한 뒤 로그인 프롬프트로 복귀한다. 자동 로그인은 하지 않는다."""
+    format_error = "error: 전화번호와 비밀번호, 확인을 위해 비밀번호를 한번 더 입력하시오."
+    if len(args) != 3:
+        print(format_error)
+        return
+    phone_text, password, confirmation = args
+    try:
+        phone = Phone.parse(phone_text)
+    except ElemSyntaxError:
+        print(format_error)
+        return
+    if not Password.is_valid(password):
+        print("error: 비밀번호는 4~20자로, 영문 대소문자·숫자·특수문자(!@#$%^&*())만 사용할 수 있으며 "
+              "영문자·숫자·특수문자 중 두 종류 이상을 포함해야 합니다. 공백은 사용할 수 없습니다.")
+        return
+    if password != confirmation:
+        print("error: 비밀번호와 비밀번호 확인이 일치하지 않습니다. 다시 한번 확인하시오.")
+        return
+    if store.find_user(phone) is not None:
+        print("error: 이미 존재하는 회원입니다. 로그인을 진행하십시오.")
+        return
+    store.users.append(UserRecord(phone=phone, password=password, seat="N"))
+    # 저장/사후 검사 실패는 전파한다. 성공 전에는 가입 완료를 안내하지 않는다.
+    store.save()
+    print(f"전화번호 {phone.store()}로 가입되었습니다. 로그인을 진행하십시오.")
 
 
 def prompt_login(store: Store) -> None:
-    # TODO(로그인·일시): 6.2, 6.2.1, 6.2.2로 교체 (signup, 인자 검사, 오류 메시지)
-    # 완료 조건: store.me 설정 후 반환, quit이면 sys.exit()
-    # 임시 구현: "login 전화번호 비밀번호"와 help, quit만 처리
+    """회원 가입 후에는 반복하고, 기존 회원 인증에 성공하면 반환한다."""
     while True:
-        tokens = tokenize(input("로그인 혹은 회원가입을 진행하시오> "))
+        try:
+            tokens = tokenize(_entry_text(input("로그인 혹은 회원가입을 진행하시오> ")))
+        except ElemSyntaxError:
+            print("error: login, signup, help, quit 중 하나를 입력하시오.")
+            continue
         group = CMD_LOOKUP.get(tokens[0]) if tokens else None
+        if group not in LOGIN_GROUPS:
+            print("error: login, signup, help, quit 중 하나를 입력하시오.")
+            continue
+        args = tokens[1:]
         if group == "quit":
+            if args:
+                print("error: 프로그램을 종료하려면 quit만을 입력하시오.")
+                continue
             sys.exit()
         if group == "help":
-            cmd_help(store, tokens[1:])
+            cmd_help(store, args)
+            continue
+        if group == "signup":
+            cmd_signup(store, args)
+            continue
+        if len(args) != 2:
+            print("error: 전화번호와 비밀번호를 입력하시오.")
             continue
         try:
-            user = store.find_user(Phone.parse(tokens[1]))
-            if group == "login" and user and user.password == tokens[2]:
-                store.me = user
-                return
-        except (IndexError, ElemSyntaxError):
-            pass
-        print("error: login, signup, help, quit 중 하나를 입력하시오.")
+            phone = Phone.parse(args[0])
+        except ElemSyntaxError:
+            print("error: 전화번호와 비밀번호를 형식에 맞게 입력하시오.")
+            continue
+        if not Password.is_valid(args[1]):
+            print("error: 전화번호와 비밀번호를 형식에 맞게 입력하시오.")
+            continue
+        user = store.find_user(phone)
+        if user is None or user.password != args[1]:
+            print("error: 존재하지 않는 회원이거나 잘못된 비밀번호입니다.")
+            continue
+        store.me = user
+        print(f"login: {user.phone.store()}로 로그인 되었습니다.")
+        return
 
 
 # ───────────────────────── 주 프롬프트 명령어 ─────────────────────────
