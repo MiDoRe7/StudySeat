@@ -554,6 +554,33 @@ def cmd_report(store: Store, args: List[str]) -> None:
 def cmd_quit(store: Store, args: List[str]) -> None:
     # TODO(조회·민원·종료): 6.9 (인자가 있으면 오류 메시지)
     sys.exit()
+# ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ 부 프롬프트 보조 함수 ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+def _no_args(args: List[str]) -> bool:
+    if args:
+        print("error: 명령어만을 입력하시오.")
+        return False
+    return True
+
+def _check_penalty(store: Store) -> bool:
+    if store.me.in_penalty(store.now):
+        print(f"warning: 본 회원은 현재 페널티가 부과되어 있습니다. "
+              f"페널티 종료 일시: {fmt_datetime(store.me.penalty_end)}")
+        return False
+    return True
+
+def _one_word(s: str) -> Optional[str]:
+    tokens = tokenize(s)
+    if len(tokens) != 1 or not tokens[0].isprintable():
+        return None
+    return tokens[0]
+
+def print_seat_map(store: Store, select: bool) -> None:
+    lo, hi = (0, 40) if select else (40, SEAT_TOTAL)
+    print("지정석 사용 현황 (좌상단부터 S00~S39)" if select
+          else "자유석 이용 현황 (좌상단부터 F40~F99)")
+    for row in range(lo, hi, 10):
+        print("".join("O" if store.seats[i].is_empty else "X" for i in range(row, row + 10)))
+    print("(O: 이용 가능 좌석 / X: 이용 불가 좌석)")
 
 
 MAIN_HANDLERS = {
