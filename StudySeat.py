@@ -307,7 +307,7 @@ class SeatRecord:
 @dataclass
 class LogRecord:
     phone: Phone
-    seat: SeatNo
+    seat: SeatNo 
     start: datetime
     amount: int      # 지정석: 일, 자유석: 시간
 
@@ -371,6 +371,11 @@ class Store:
 # ───────────────────────── 무결성 검사 (담당: 무결성) ─────────────────────────
 def check_startup() -> Store:
     # TODO(무결성): 5.6.1의 1~5단계로 교체
+    # 1. 경로 확인
+    if not os.path.isdir(BASE_DIR):
+        print('error: 주 실행 파일의 경로를 확인할 수 없습니다. 프로그램을 종료합니다')
+        sys.exit()
+
     # 임시 구현: 검사 없이 파일을 읽어 Store를 만들기만 함(다른 담당자 테스트용)
     for name in (USERS_FILE, INFO_FILE, LOG_FILE):
         if not os.path.exists(data_path(name)):
