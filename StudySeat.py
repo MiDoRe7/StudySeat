@@ -625,7 +625,7 @@ def sub_select_seat(store: Store, mode: str) -> None:    #지정석 좌석 선�
             me.seat = seat.store()
             store.add_log(seat, 1)
             store.save()
-             print(f"지정석 {seat.store()}의 사용 신청이 완료되었습니다.")
+            print(f"지정석 {seat.store()}의 사용 신청이 완료되었습니다.")
             sub_add_time(store)
         else:
             old = store.seat_of(me.seat_no)
@@ -672,7 +672,7 @@ def sub_reserve_free(store: Store) -> None:    #부 프롬프트 4 : 자유석 �
         me.remain -= hours
         store.add_log(seat, hours)
         store.save()
-        print("{seat.store()}좌석의 예약이 완료되었습니다.")
+        print(f"{seat.store()}좌석의 예약이 완료되었습니다.")
         print(f"잔여 시간: {me.remain}시간")
         print(f"이용 종료 일시: {fmt_datetime(target.end)}")
         return
