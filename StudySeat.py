@@ -373,13 +373,28 @@ def check_startup() -> Store:
     # TODO(무결성): 5.6.1의 1~5단계로 교체
     # 1. 경로 확인
     if not os.path.isdir(BASE_DIR):
-        print('error: 주 실행 파일의 경로를 확인할 수 없습니다. 프로그램을 종료합니다')
+        print('error: 주 실행 파일의 경로를 확인할 수 없습니다. 프로그램을 종료합니다.')
         sys.exit()
 
+    # 2. 파일 존재 및 권한 확인
+    files = [USERS_FILE, INFO_FILE, LOG_FILE]
+    for file in files:
+        path = data_path(file)
+        if not os.path.isfile(path):
+            print("warning: 데이터 파일이 없습니다: [%s]" % file)
+            try:
+                write_lines(path, [])
+                print("빈 데이터 파일을 새로 생성했습니다: [%s]" % file)
+            except OSError:
+                print("error: 데이터 파일을 생성하지 못했습니다: [%s] 프로그램을 종료합니다.", file)
+                sys.exit()
+        else:
+            if not os.access(path, os.R_OK | os.W_OK):
+                print("error: 데이터 파일에 대한 읽기 및 쓰기 권한이 없습니다: [%s] 프로그램을 종료합니다.", file)
+                sys.exit()
+
+
     # 임시 구현: 검사 없이 파일을 읽어 Store를 만들기만 함(다른 담당자 테스트용)
-    for name in (USERS_FILE, INFO_FILE, LOG_FILE):
-        if not os.path.exists(data_path(name)):
-            write_lines(data_path(name), [])
     users = [UserRecord.from_line(l) for l in read_lines(data_path(USERS_FILE))]
     logs = [LogRecord.from_line(l) for l in read_lines(data_path(LOG_FILE))]
     info = read_lines(data_path(INFO_FILE))
