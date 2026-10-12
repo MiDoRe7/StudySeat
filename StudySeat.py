@@ -386,13 +386,14 @@ def check_startup() -> Store:
                 write_lines(path, [])
                 print("빈 데이터 파일을 새로 생성했습니다: [%s]" % file)
             except OSError:
-                print("error: 데이터 파일을 생성하지 못했습니다: [%s] 프로그램을 종료합니다.", file)
+                print("error: 데이터 파일을 생성하지 못했습니다: [%s] 프로그램을 종료합니다." % file)
                 sys.exit()
         else:
             if not os.access(path, os.R_OK | os.W_OK):
-                print("error: 데이터 파일에 대한 읽기 및 쓰기 권한이 없습니다: [%s] 프로그램을 종료합니다.", file)
+                print("error: 데이터 파일에 대한 읽기 및 쓰기 권한이 없습니다: [%s] 프로그램을 종료합니다." % file)
                 sys.exit()
 
+    # 3. 파일별 검사
 
     # 임시 구현: 검사 없이 파일을 읽어 Store를 만들기만 함(다른 담당자 테스트용)
     users = [UserRecord.from_line(l) for l in read_lines(data_path(USERS_FILE))]
