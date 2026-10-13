@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
@@ -695,58 +696,6 @@ def prompt_login(store: Store) -> None:
         return
 
 
-# ───────────────────────── 주 프롬프트 명령어 ─────────────────────────
-# 공통 규약
-#   - 시그니처는 (store, args), args는 명령어 뒤의 인자(단어) 목록
-#   - 로그인 회원은 store.me, 현재 일시는 store.now
-#   - 부 프롬프트 입력은 read_sub() 사용, QuitSignal은 잡지 말 것(주 프롬프트 루프가 처리)
-#   - 데이터를 수정했으면 반환 전에 store.save() 호출
-#   - 함수가 반환하면 주 프롬프트로 되돌아감
-
-def print_main_help() -> None:
-    # TODO(도움말): 6절의 주 프롬프트 명령어 안내 화면
-    print("— 명령어 및 인자에 대한 설명 —")
-
-
-def print_login_help() -> None:
-    # TODO(도움말): 6.2의 로그인 프롬프트 명령어 안내 화면
-    print("— 명령어 및 인자에 대한 설명 —")
-
-
-def cmd_help(store: Store, args: List[str]) -> None:
-    # TODO(도움말): 6.3 (인자 0~1개, 명령어별 상세 도움말)
-    # 로그인 프롬프트에서도 호출됨, store.me가 None이면 로그인 프롬프트
-    print_login_help() if store.me is None else print_main_help()
-
-
-def cmd_charge(store: Store, args: List[str]) -> None:
-    # TODO(충전·예약·변경): 6.4, 부 프롬프트1~3
-    print("미구현: charge")
-
-
-def cmd_reserve(store: Store, args: List[str]) -> None:
-    # TODO(충전·예약·변경): 6.5, 부 프롬프트4
-    print("미구현: reserve")
-
-
-def cmd_change(store: Store, args: List[str]) -> None:
-    # TODO(충전·예약·변경): 6.6, 부 프롬프트3
-    print("미구현: change")
-
-
-def cmd_log(store: Store, args: List[str]) -> None:
-    # TODO(조회·민원·종료): 6.7
-    print("미구현: log")
-
-
-def cmd_report(store: Store, args: List[str]) -> None:
-    # TODO(조회·민원·종료): 6.8, 부 프롬프트5, 강제 퇴실은 store.checkout() 사용
-    print("미구현: report")
-
-
-def cmd_quit(store: Store, args: List[str]) -> None:
-    # TODO(조회·민원·종료): 6.9 (인자가 있으면 오류 메시지)
-    sys.exit()
 # ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ 부 프롬프트 보조 함수 ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
 def _no_args(args: List[str]) -> bool:
     if args:
@@ -774,6 +723,325 @@ def print_seat_map(store: Store, select: bool) -> None:
     for row in range(lo, hi, 10):
         print("".join("O" if store.seats[i].is_empty else "X" for i in range(row, row + 10)))
     print("(O: 이용 가능 좌석 / X: 이용 불가 좌석)")
+
+# ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ 부 프롬프트(충전/예약/변경) ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
+def sub_add_time(store: Store, new_free=False) -> None:    #충전 프롬프트 분기 함수. 회원의 좌석 보유 여부를 확인 
+    if store.me.has_select_seat:
+        _add_days(store)
+    else:
+        _add_hours(store, new_free)
+
+def _add_hours(store: Store, new_free: bool = False) -> None:    #자유석 시간 추가
+    me = store.me
+    while True:
+        print("이용 서비스: 자유석")
+        print(f"잔여 시간: {me.remain}시간")
+        word = _one_word(read_sub("추가할 시간을 입력하시오 : "))
+        try:
+            hours = parse_amount(word or "")
+        except ElemSyntaxError:
+            hours = None
+        if hours is None or hours > CHARGE_MAX:
+            print(f"error: 충전 시간 입력 범위: 0 < 충전 시간 < {CHARGE_MAX + 1}")
+            continue
+        if me.remain + hours > REMAIN_MAX:
+            print(f"error: 최대 잔여 시간은 {REMAIN_MAX}시간 입니다.")
+            continue
+        me.remain += hours
+        if new_free:
+            me.seat = "F"
+        store.save()
+        print("시간 충전이 완료되었습니다.")
+        print(f"잔여 시간: {me.remain}시간")
+        return
+
+def _add_days(store: Store):    #지정석 시간 연장
+    me, rec = store.me, store.seat_of(store.me.seat_no)
+    limit = timedelta(days=SELECT_LIMIT_DAYS)
+    while True:
+        print("이용 서비스: 지정석")
+        print(f"지정석 이용 종료 일시: {fmt_datetime(rec.end)}")
+        word = _one_word(read_sub("추가할 기간(일 단위)을 입력하시오 : "))
+        try:
+            days = parse_amount(word or "")
+        except ElemSyntaxError:
+            print(f"error: 충전 기간은 1 이상의 정수로 입력하시오.")
+            continue
+        new_end = rec.end + timedelta(days=days) if days <= SELECT_LIMIT_DAYS else None
+        if new_end is None or new_end - store.now > limit:
+            print(f"error: 지정석 이용 종료 일시는 현재 일시로부터 {SELECT_LIMIT_DAYS}일을 초과할 수 없습니다")
+            continue
+        rec.end = new_end
+        store.add_log(me.seat_no, days)
+        store.save()
+        print("기간 연장이 완료되었습니다.")
+        print(f"지정석 이용 종료 일시: {fmt_datetime(rec.end)}")
+        return
+
+def sub_select_service(store: Store):    #이용 서비스 선택
+    while True:
+        word = _one_word(read_sub("이용하실 서비스를 선택하세요(지정석의 경우 S, 자유석의 경우 F 입력): "))
+        if word == "F" or word == "f":
+            print("자유석 이용 선택됨")
+            sub_add_time(store, new_free=True)
+            return
+        elif word == "S" or word == "s":
+            print("지정석 이용 선택됨")
+            sub_select_seat(store, "new")
+            return
+        else:
+            print("error: 잘못된 입력입니다.")
+            continue
+            
+def sub_select_seat(store: Store, mode: str) -> None:    #지정석 좌석 선택
+    me = store.me
+    while True:
+        print_seat_map(store, True)
+        word = _one_word(read_sub("이용하실 좌석을 입력하시오(S00~S39): "))
+        if word is None:
+            print("error: 하나의 좌석 번호를 입력하시오")
+            continue
+        try:
+            seat = SeatNo.parse(word)
+        except (ElemSyntaxError, ElemSemanticError):
+            seat = None
+        if seat is None or not seat.is_select:
+            print("error: 지정석 좌석 번호를 입력하시오.(S00~S39)")
+            continue
+        target = store.seat_of(seat)
+        if not target.is_empty:
+            print("error: 이용이 불가능한 좌석입니다.")
+            continue
+        if mode == "new":
+            target.phone = me.phone
+            target.end = store.now + timedelta(days=1)
+            me.seat = seat.store()
+            store.add_log(seat, 1)
+            store.save()
+            print(f"지정석 {seat.store()}의 사용 신청이 완료되었습니다.")
+            sub_add_time(store)
+        else:
+            old = store.seat_of(me.seat_no)
+            target.phone, target.end = old.phone, old.end
+            old.clear()
+            me.seat = seat.store()
+            days = math.ceil((target.end - store.now) / timedelta(days=1))
+            store.add_log(seat, days)
+            store.save()
+            print(f"지정석이 {seat.store()}(으)로 변경되었습니다.")
+            print(f"지정석 이용 종료 일시: {fmt_datetime(target.end)}")
+        return
+
+def sub_reserve_free(store: Store) -> None:    #부 프롬프트 4 : 자유석 예약
+    me = store.me
+    while True:
+        print_seat_map(store, False)
+        print(f"잔여 시간: {me.remain}시간")
+        tokens = tokenize(read_sub(f"이용하실 좌석(F40~F99)과 이용하실 시간(1~{FREE_RESERVE_MAX})을 입력하시오: "))
+        try:
+            if len(tokens) != 2 or not all(t.isprintable() for t in tokens):
+                raise ElemSyntaxError
+            seat = SeatNo.parse(tokens[0])
+            hours = parse_amount(tokens[1])
+        except (ElemSyntaxError, ElemSemanticError):
+            print(f"error: 하나의 좌석(F40~F99)과 이용시간(1~{FREE_RESERVE_MAX})을 입력하시오")
+            continue
+        if seat.is_select:
+            print("error: 자유석 좌석 번호를 입력하시오.(F40~F99)")
+            continue
+        target = store.seat_of(seat)
+        if not target.is_empty:
+            print("error: 이용이 불가능한 좌석입니다.")
+            continue
+        if hours > me.remain:
+            print("error: 잔여 시간이 부족합니다.")
+            continue
+        if hours > FREE_RESERVE_MAX:
+            print(f"error: 최대 이용 시간은 {FREE_RESERVE_MAX}시간입니다.")
+            continue
+        target.phone = me.phone
+        target.end = store.now + timedelta(hours=hours)
+        me.seat = seat.store()
+        me.remain -= hours
+        store.add_log(seat, hours)
+        store.save()
+        print(f"{seat.store()}좌석의 예약이 완료되었습니다.")
+        print(f"잔여 시간: {me.remain}시간")
+        print(f"이용 종료 일시: {fmt_datetime(target.end)}")
+        return
+
+# ───────────────────────── 주 프롬프트 명령어 ─────────────────────────
+# 공통 규약
+#   - 시그니처는 (store, args), args는 명령어 뒤의 인자(단어) 목록
+#   - 로그인 회원은 store.me, 현재 일시는 store.now
+#   - 부 프롬프트 입력은 read_sub() 사용, QuitSignal은 잡지 말 것(주 프롬프트 루프가 처리)
+#   - 데이터를 수정했으면 반환 전에 store.save() 호출
+#   - 함수가 반환하면 주 프롬프트로 되돌아감
+
+HELP_TEXT = {
+    "login": ("전화번호 비밀번호", "등록된 회원 정보로 로그인합니다."),
+    "signup": ("전화번호 비밀번호 비밀번호확인", "회원 가입 후 로그인 프롬프트로 돌아갑니다."),
+    "help": ("없거나 명령어 1개", "현재 프롬프트의 명령어 목록 또는 특정 명령어의 상세 도움말을 출력합니다."),
+    "charge": ("없음", "이용 시간 또는 이용 기간을 충전합니다. 이용권이 없으면 이용할 서비스를 선택합니다."),
+    "reserve": ("없음", "자유석 현황을 확인하고 좌석과 이용 시간을 입력하여 예약합니다."),
+    "change": ("없음", "지정석 이용 중 다른 빈 지정석으로 변경합니다."),
+    "log": ("없음", "로그인한 회원의 예약 이력을 출력합니다."),
+    "report": ("좌석 번호 1개", "다른 회원이 이용 중인 좌석에 민원을 신청합니다. 내용을 1~2000자로 입력하면 경고를 부여하며, 세 번째 경고에는 72시간 페널티와 강제 퇴실을 적용합니다."),
+    "quit": ("없음", "일시 입력·로그인·주 프롬프트에서는 프로그램을 종료합니다. 부 프롬프트에서는 진행 중 입력만 취소하고 주 프롬프트로 돌아갑니다. 이미 저장한 내용은 유지됩니다."),
+}
+
+
+def _print_command_help(groups: Tuple[str, ...]) -> None:
+    print("— 명령어 및 인자에 대한 설명 —")
+    print("명령어 / 인자 / 설명")
+    for command in groups:
+        argument, description = HELP_TEXT[command]
+        print(f"{command} / {argument} / {description}")
+
+
+def print_main_help() -> None:
+    _print_command_help(MAIN_GROUPS)
+
+
+def print_login_help() -> None:
+    _print_command_help(LOGIN_GROUPS)
+
+
+def cmd_help(store: Store, args: List[str]) -> None:
+    # 로그인 전에는 로그인 안내, 로그인 후에는 주 프롬프트 안내.
+    print_menu = print_login_help if store.me is None else print_main_help
+    if len(args) > 1:
+        print("error: 인자가 너무 많습니다. 최대 1개의 명령어만 입력하시오.")
+        print_menu()
+        return
+    if not args:
+        print_menu()
+        return
+    command = CMD_LOOKUP.get(args[0])
+    if command is None:
+        print(f'error: “{args[0]}” 명령어는 존재하지 않습니다.')
+        print_menu()
+        return
+    # 상세 도움말의 인자는 현재 위치와 관계없이 표 1의 모든 명령어를 허용.
+    argument, description = HELP_TEXT[command]
+    print(command)
+    print("명령어/별칭: " + ", ".join(COMMANDS[command]))
+    print(f"인자: {argument}")
+    print(f"동작: {description}")
+
+
+
+def cmd_charge(store: Store, args: List[str]) -> None:
+    # TODO(충전·예약·변경): 6.4, 부 프롬프트1~3
+    if not _no_args(args) or not _check_penalty(store):
+        return
+    if store.me.has_no_ticket:
+        sub_select_service(store)
+    else:
+        sub_add_time(store)
+
+
+def cmd_reserve(store: Store, args: List[str]) -> None:
+    # TODO(충전·예약·변경): 6.5, 부 프롬프트4
+    if not _no_args(args):
+        return
+    if store.me.has_seat:
+        print("error: 이미 좌석을 사용중입니다.")
+        return
+    if store.me.seat != "F":
+        print("error: 자유석 서비스를 이용 중이 아닙니다.")
+        return
+    if not _check_penalty(store):
+        return
+    sub_reserve_free(store)
+
+
+def cmd_change(store: Store, args: List[str]) -> None:
+    # TODO(충전·예약·변경): 6.6, 부 프롬프트3
+    if not _no_args(args):
+        return
+    if not store.me.has_select_seat:
+        print("error: 지정석을 사용중이 아닙니다.")
+        return
+    sub_select_seat(store, "change")
+
+
+def cmd_log(store: Store, args: List[str]) -> None:
+    if not _no_args(args):
+        return
+    found = False
+    for record in store.logs:
+        if record.phone != store.me.phone:
+            continue
+        found = True
+        unit = "일" if record.seat.is_select else "시간"
+        print(f"사용 좌석: {record.seat.store()} /"
+              f"사용 시작 일시: {fmt_datetime(record.start)} /"
+              f"사용 시간: {record.amount}{unit}")
+    if not found:
+        print("이용 내역이 없습니다.")
+
+
+
+def cmd_report(store: Store, args: List[str]) -> None:
+    if not args:
+        print("error: 민원을 신청 할 좌석 번호(S00~S39, F40~F99)를 입력하시오.")
+        return
+    if len(args) > 1:
+        print("error: 인자가 너무 많습니다. 하나의 인자를 입력하시오.")
+        return
+    try:
+        seat_no = SeatNo.parse(args[0])
+    except (ElemSyntaxError, ElemSemanticError):
+        print("error: 좌석 번호 형식(S00~S39, F40~F99)에 맞지 않습니다.")
+        return
+    seat = store.seat_of(seat_no)
+    if seat.is_empty:
+        print("error: 해당 좌석을 이용중인 사용자가 없습니다.")
+        return
+    if seat.phone == store.me.phone:
+        print("error: 본인이 이용중인 좌석입니다.")
+        return
+
+    # quit/q이면 QuitSignal이 발생하며 prompt_main()이 처리한다.
+    # strip()하지 않아 민원 내용 원문과 실제 입력 길이를 보존한다.
+    content = read_sub("해당 좌석에 대해 민원을 제기할 내용을 작성하시오: ")
+    if not 1 <= len(content) <= REPORT_MAX_LEN:
+        print(f"error: 민원의 내용은 최소 1자 최대 {REPORT_MAX_LEN}자 입니다.")
+        return
+
+    target = store.find_user(seat.phone)
+    penalized = target.warn == WARN_LIMIT - 1
+    if penalized:
+        # 계산에 실패해도 회원 상태를 일부만 변경하지 않도록 먼저 계산한다.
+        try:
+            penalty_end = store.now + timedelta(hours=PENALTY_HOURS)
+        except OverflowError:
+            print("error: 페널티 종료 일시가 표현 가능한 날짜 범위를 초과하여 민원을 접수할 수 없습니다.")
+            return
+        target.warn = 0
+        target.penalty_end = penalty_end
+        store.checkout(target)
+    else:
+        target.warn += 1
+
+    # 공용 저장 함수가 파일 저장과 사후 무결성 검사를 담당한다.
+    # 성공한 뒤에만 접수 완료를 안내한다. 예약 이력은 추가/변경하지 않는다.
+    store.save()
+    print(f"{seat_no.store()}좌석에 대한 민원 ‘{content}’ 가 접수되었습니다. "
+          "해당 회원에게 경고가 부여되었습니다.")
+    if penalized:
+        print(f"경고 한도에 도달하여 강제 퇴실 및 {PENALTY_HOURS}시간 페널티가 적용되었습니다. "
+              f"페널티 종료 일시: {fmt_datetime(target.penalty_end)}")
+
+
+def cmd_quit(store: Store, args: List[str]) -> None:
+    # 일시·로그인 프롬프트의 종료와 부 프롬프트의 취소는 기존 코드가 처리한다.
+    if args:
+        print("error: 프로그램을 종료하려면 quit만을 입력하시오.")
+        return
+    sys.exit()
+
 
 
 MAIN_HANDLERS = {
