@@ -446,7 +446,15 @@ def check_info_file(lines:List[str]) -> Tuple[Optional[datetime], List[SeatRecor
 
     bad = set() # 틀린 행 번호를 모아둘 곳
     phones = {} # 전화번호 -> 행 번호 목록
+    last_dt = '0000-00-00 00:00'
 
+    # 빈 파일인 경우
+    if len(lines) == 0:
+        seat_records = [SeatRecord(SeatNo(i)) for i in range(SEAT_TOTAL)]
+        write_lines(data_path(INFO_FILE), [fmt_datetime(None)] + [rec.to_line() for rec in seat_records])
+        print("빈 좌석 현황 파일을 초기화했습니다.")
+        return last_dt, seat_records
+    
     for i, line in enumerate(lines):
         try:
             if i == 0:
@@ -471,10 +479,9 @@ def check_info_file(lines:List[str]) -> Tuple[Optional[datetime], List[SeatRecor
         for i in sorted(bad):
             print(lines[i])
         sys.exit()
-    
-    return last_dt, seat_records
 
     
+    return last_dt, seat_records
 
 def check_log_file(lines:List[str]) -> List[LogRecord]:
     log_records = []
@@ -492,9 +499,6 @@ def check_log_file(lines:List[str]) -> List[LogRecord]:
         sys.exit()
 
     return log_records
-
-
-    
 
 def check_after_write(store: Store) -> None:
     # TODO(무결성): 5.6.2 (5.6.1의 3단계, 5단계), 오류 시 출력 후 sys.exit()
