@@ -476,7 +476,7 @@ def check_info_file(lines:List[str]) -> Tuple[Optional[datetime], Optional[List[
     # 행 개수 검사
     if len(lines) not in (0, SEAT_TOTAL + 1):
         print("error: 좌석 현황 파일의 행 개수가 올바르지 않습니다: %d" % len(lines))
-        return None
+        return None, None
 
     bad = set() # 틀린 행 번호를 모아둘 곳
     phones = {} # 전화번호 -> 행 번호 목록
