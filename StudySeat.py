@@ -510,7 +510,7 @@ def check_info_file(lines:List[str]) -> Tuple[Optional[datetime], Optional[List[
     
     return last_dt, seat_records
 
-def check_log_file(lines:List[str]) -> List[LogRecord]:
+def check_log_file(lines:List[str]) -> Optional[List[LogRecord]]:
     log_records = []
     bad = set()
     for i, line in enumerate(lines):
