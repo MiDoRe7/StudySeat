@@ -368,9 +368,7 @@ class Store:
         check_after_write(self)
 
 
-# ───────────────────────── 무결성 검사 (담당: 무결성) ─────────────────────────
 def check_startup() -> Store:
-    # TODO(무결성): 5.6.1의 1~5단계로 교체
     # 1. 경로 확인
     if not os.path.isdir(BASE_DIR):
         print('error: 주 실행 파일의 경로를 확인할 수 없습니다. 프로그램을 종료합니다.')
@@ -394,66 +392,94 @@ def check_startup() -> Store:
                 sys.exit()
 
     # 3. 파일별 검사
+    users, last_dt, seats, logs = check_each_file()
+
+    # 4. 좌석 현황 파일이 빈 파일인 경우 초기화
+    if not seats: 
+        seats = [SeatRecord(SeatNo(i)) for i in range(SEAT_TOTAL)]
+        write_lines(data_path(INFO_FILE), [fmt_datetime(None)] + [rec.to_line() for rec in seats])
+        print("빈 좌석 현황 파일을 초기화했습니다")
+        
+    store = Store(users, seats, logs, last_dt)
+    
+    # 5. 파일 간 검사
+    check_cross_files(store)
+    return store
+
+def check_each_file() -> Tuple[List[UserRecord], Optional[datetime], List[SeatRecord], List[LogRecord]]:
+    files = [USERS_FILE, INFO_FILE, LOG_FILE]
+    has_error = False
     for file in files:
         path = data_path(file)
         try:
             lines = read_lines(path)
-            if file == files[0]:
-                users = check_users_file(lines)
-            elif file == files[1]:
-                last_dt, seats = check_info_file(lines)
-            else:
-                logs = check_log_file(lines)
+            
         except(UnicodeDecodeError):
             print("error: 데이터 파일을 UTF-8로 읽을 수 없습니다: [%s]" % file)
-            sys.exit()
+            has_error = True
+            continue
 
-    return Store(users, seats, logs, last_dt)
+        if file == files[0]:
+            users = check_users_file(lines)
+            if users is None:
+                has_error = True
+        elif file == files[1]:
+            last_dt, seats = check_info_file(lines)
+            if last_dt is None and seats is None:
+                has_error = True
+        else:
+            logs = check_log_file(lines)
+            if logs is None:
+                has_error = True
 
-    # 임시 구현: 검사 없이 파일을 읽어 Store를 만들기만 함(다른 담당자 테스트용)
-    users = [UserRecord.from_line(l) for l in read_lines(data_path(USERS_FILE))]
-    logs = [LogRecord.from_line(l) for l in read_lines(data_path(LOG_FILE))]
-    info = read_lines(data_path(INFO_FILE))
-    if info:
-        return Store(users, [SeatRecord.from_line(l) for l in info[1:]], logs, load_last_dt(info[0]))
-    store = Store(users, [SeatRecord(SeatNo(i)) for i in range(SEAT_TOTAL)], logs, None)
-    store.save()
-    return store
+    if has_error:
+        sys.exit()
 
-def check_users_file(lines:List[str]) -> List[UserRecord]:
+    return users, last_dt, seats, logs
+
+def check_users_file(lines:List[str]) -> Optional[List[UserRecord]]:
     user_records = []
     bad = set()
-    for line in lines:
+    phones = {}
+    seat_nos = {}
+    for i, line in enumerate(lines):
         try:
-            user_records.append(UserRecord.from_line(line))
+            user_rec = UserRecord.from_line(line)
+            user_records.append(user_rec)
+            phones.setdefault(user_rec.phone, []).append(i)
+            if user_rec.has_seat:
+                seat_nos.setdefault(user_rec.seat_no, []).append(i)
         except(ElemSyntaxError):
-            bad.add(line)            
+            bad.add(i)            
 
+    # 전화번호의 유일성
+    for idxs in phones.values():
+        if len(idxs) > 1:
+            bad.update(idxs)
+
+    # 좌석의 유일성
+    for idxs in seat_nos.values():
+        if len(idxs) > 1:
+            bad.update(idxs)
+    
     if len(bad) != 0:
         print('error: 데이터 파일에 규칙에 맞지 않는 행이 있습니다: [%s]' % USERS_FILE)
-        for line in bad:
-            print(line)
-        sys.exit()
+        for i in sorted(bad):
+            print(lines[i])
+        return None
 
     return user_records
 
-def check_info_file(lines:List[str]) -> Tuple[Optional[datetime], List[SeatRecord]]:
+def check_info_file(lines:List[str]) -> Tuple[Optional[datetime], Optional[List[SeatRecord]]]:
     seat_records = []
     # 행 개수 검사
     if len(lines) not in (0, SEAT_TOTAL + 1):
         print("error: 좌석 현황 파일의 행 개수가 올바르지 않습니다: %d" % len(lines))
-        sys.exit()
+        return None
 
     bad = set() # 틀린 행 번호를 모아둘 곳
     phones = {} # 전화번호 -> 행 번호 목록
-    last_dt = '0000-00-00 00:00'
-
-    # 빈 파일인 경우
-    if len(lines) == 0:
-        seat_records = [SeatRecord(SeatNo(i)) for i in range(SEAT_TOTAL)]
-        write_lines(data_path(INFO_FILE), [fmt_datetime(None)] + [rec.to_line() for rec in seat_records])
-        print("빈 좌석 현황 파일을 초기화했습니다.")
-        return last_dt, seat_records
+    last_dt = None
     
     for i, line in enumerate(lines):
         try:
@@ -478,7 +504,7 @@ def check_info_file(lines:List[str]) -> Tuple[Optional[datetime], List[SeatRecor
         print('error: 데이터 파일에 규칙에 맞지 않는 행이 있습니다: [%s]' % INFO_FILE)
         for i in sorted(bad):
             print(lines[i])
-        sys.exit()
+        return None, None
 
     
     return last_dt, seat_records
@@ -486,23 +512,75 @@ def check_info_file(lines:List[str]) -> Tuple[Optional[datetime], List[SeatRecor
 def check_log_file(lines:List[str]) -> List[LogRecord]:
     log_records = []
     bad = set()
-    for line in lines:
+    for i, line in enumerate(lines):
         try:
             log_records.append(LogRecord.from_line(line))
         except(ElemSyntaxError):
-            bad.add(line)
+            bad.add(i)
 
     if len(bad) != 0:
         print('error: 데이터 파일에 규칙에 맞지 않는 행이 있습니다: [%s]' % LOG_FILE)
-        for line in bad:
-            print(line)
-        sys.exit()
+        for idx in sorted(bad):
+            print(lines[idx])
+        return None
 
     return log_records
 
+def check_cross_files(store: Store) -> bool:
+    error = 0
+    # 회원에서 좌석으로
+    for i, user_rec in enumerate(store.users):
+        if user_rec.has_seat:
+            seat_no = user_rec.seat_no
+            if not store.seat_of(seat_no).phone ==  user_rec.phone:
+                error += 1
+                print("error: 데이터 파일 간 내용이 일치하지 않습니다. 프로그램을 종료합니다.")
+                print("[%s] %d행: %s" % (USERS_FILE, i + 1, user_rec.to_line()))
+                print("[%s] %d행: %s" % (INFO_FILE, seat_no.num + 2, store.seat_of(seat_no).to_line()))
+
+
+    # 좌석에서 회원으로
+    for i, seat_rec in enumerate(store.seats):
+        if not seat_rec.is_empty:
+            user_rec = store.find_user(seat_rec.phone)
+            if user_rec is None or not user_rec.has_seat or seat_rec.seat != user_rec.seat_no:
+                error += 1
+                print("error: 데이터 파일 간 내용이 일치하지 않습니다. 프로그램을 종료합니다.")
+                print("[%s] %d행: %s" % (INFO_FILE, i + 2, seat_rec.to_line()))
+                if user_rec is not None:
+                    print("[%s] %d행: %s" % (USERS_FILE, store.users.index(user_rec) + 1, user_rec.to_line()))
+
+    # 예약 이력의 시점
+    last_dt = store.last_dt
+    if last_dt is None and len(store.logs) != 0:    # 최종 기록 일시가 기본값인데 예약 이력 파일에 레코드가 하나 이상 존재하는 경우
+        error += 1
+        print("error: 데이터 파일 간 내용이 일치하지 않습니다. 프로그램을 종료합니다.")
+        print("[%s] %d행: %s" % (INFO_FILE, 1, fmt_datetime(last_dt)))
+        for i, log_rec in enumerate(store.logs):
+            print("[%s] %d행: %s" % (LOG_FILE, i + 1, log_rec.to_line()))
+
+    elif last_dt is not None:
+        bad_logs = {idx + 1:log_rec for idx, log_rec in enumerate(store.logs) if log_rec.start > last_dt}
+        if len(bad_logs) > 0:
+            error += 1
+            print("error: 데이터 파일 간 내용이 일치하지 않습니다. 프로그램을 종료합니다.")
+            print("[%s] %d행: %s" % (INFO_FILE, 1, fmt_datetime(last_dt)))
+            for idx in bad_logs:
+                print("[%s] %d행: %s" % (LOG_FILE, idx, bad_logs[idx].to_line()))
+
+    if error > 0:
+        sys.exit()
+
+    return True
+
+# store는 save()와의 호출 규약상 받기만 하고, 검사는 디스크에서 다시 읽은 내용으로 함
 def check_after_write(store: Store) -> None:
-    # TODO(무결성): 5.6.2 (5.6.1의 3단계, 5단계), 오류 시 출력 후 sys.exit()
-    pass
+    # 3. 파일별 검사 (디스크에 저장된 내용을 다시 읽음)
+    users, last_dt, seats, logs = check_each_file()
+
+    # 5. 파일 간 검사 (다시 읽은 내용 기준)
+    check_cross_files(Store(users, seats, logs, last_dt))
+
 
 
 # ───────────────────────── 입력 공용 ─────────────────────────
