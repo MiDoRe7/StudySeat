@@ -380,7 +380,7 @@ def check_startup() -> Store:
     files = [USERS_FILE, INFO_FILE, LOG_FILE]
     for file in files:
         path = data_path(file)
-        if not os.path.isfile(path):
+        if not os.path.isfile(path): # 파일이 없는 경우
             print("warning: 데이터 파일이 없습니다: [%s]" % file)
             try:
                 write_lines(path, [])
@@ -388,12 +388,27 @@ def check_startup() -> Store:
             except OSError:
                 print("error: 데이터 파일을 생성하지 못했습니다: [%s] 프로그램을 종료합니다." % file)
                 sys.exit()
-        else:
+        else: # 파일이 존재하는 경우
             if not os.access(path, os.R_OK | os.W_OK):
                 print("error: 데이터 파일에 대한 읽기 및 쓰기 권한이 없습니다: [%s] 프로그램을 종료합니다." % file)
                 sys.exit()
 
     # 3. 파일별 검사
+    for file in files:
+        path = data_path(file)
+        try:
+            lines = read_lines(path)
+            if file == files[0]:
+                users = check_users_file(lines)
+            elif file == files[1]:
+                last_dt, seats = check_info_file(lines)
+            else:
+                logs = check_log_file(lines)
+        except(UnicodeDecodeError):
+            print("error: 데이터 파일을 UTF-8로 읽을 수 없습니다: [%s]" % file)
+            sys.exit()
+
+    return Store(users, seats, logs, last_dt)
 
     # 임시 구현: 검사 없이 파일을 읽어 Store를 만들기만 함(다른 담당자 테스트용)
     users = [UserRecord.from_line(l) for l in read_lines(data_path(USERS_FILE))]
@@ -405,6 +420,81 @@ def check_startup() -> Store:
     store.save()
     return store
 
+def check_users_file(lines:List[str]) -> List[UserRecord]:
+    user_records = []
+    bad = set()
+    for line in lines:
+        try:
+            user_records.append(UserRecord.from_line(line))
+        except(ElemSyntaxError):
+            bad.add(line)            
+
+    if len(bad) != 0:
+        print('error: 데이터 파일에 규칙에 맞지 않는 행이 있습니다: [%s]' % USERS_FILE)
+        for line in bad:
+            print(line)
+        sys.exit()
+
+    return user_records
+
+def check_info_file(lines:List[str]) -> Tuple[Optional[datetime], List[SeatRecord]]:
+    seat_records = []
+    # 행 개수 검사
+    if len(lines) not in (0, SEAT_TOTAL + 1):
+        print("error: 좌석 현황 파일의 행 개수가 올바르지 않습니다: %d" % len(lines))
+        sys.exit()
+
+    bad = set() # 틀린 행 번호를 모아둘 곳
+    phones = {} # 전화번호 -> 행 번호 목록
+
+    for i, line in enumerate(lines):
+        try:
+            if i == 0:
+                last_dt = load_last_dt(line)
+            else:
+                rec = SeatRecord.from_line(line)
+                seat_records.append(rec)
+                if rec.seat.num + 1 != i:   # 좌석번호가 순서에 맞지 않을 때
+                    bad.add(i)
+                if rec.phone is not None: # 빈 좌석이 아니면
+                    phones.setdefault(rec.phone.store(), []).append(i)
+        except(ElemSyntaxError):
+            bad.add(i)
+
+    for v in phones.values():
+        if len(v) >= 2:
+            bad.update(v)    
+
+    # 규칙에 맞지 않는 행 출력
+    if len(bad) != 0:
+        print('error: 데이터 파일에 규칙에 맞지 않는 행이 있습니다: [%s]' % INFO_FILE)
+        for i in sorted(bad):
+            print(lines[i])
+        sys.exit()
+    
+    return last_dt, seat_records
+
+    
+
+def check_log_file(lines:List[str]) -> List[LogRecord]:
+    log_records = []
+    bad = set()
+    for line in lines:
+        try:
+            log_records.append(LogRecord.from_line(line))
+        except(ElemSyntaxError):
+            bad.add(line)
+
+    if len(bad) != 0:
+        print('error: 데이터 파일에 규칙에 맞지 않는 행이 있습니다: [%s]' % LOG_FILE)
+        for line in bad:
+            print(line)
+        sys.exit()
+
+    return log_records
+
+
+    
 
 def check_after_write(store: Store) -> None:
     # TODO(무결성): 5.6.2 (5.6.1의 3단계, 5단계), 오류 시 출력 후 sys.exit()
