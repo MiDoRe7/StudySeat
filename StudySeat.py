@@ -879,24 +879,72 @@ def sub_reserve_free(store: Store) -> None:    #부 프롬프트 4 : 자유석 �
 #   - 함수가 반환하면 주 프롬프트로 되돌아감
 
 HELP_TEXT = {
-    "login": ("전화번호 비밀번호", "등록된 회원 정보로 로그인합니다."),
-    "signup": ("전화번호 비밀번호 비밀번호확인", "회원 가입 후 로그인 프롬프트로 돌아갑니다."),
-    "help": ("없거나 명령어 1개", "현재 프롬프트의 명령어 목록 또는 특정 명령어의 상세 도움말을 출력합니다."),
-    "charge": ("없음", "이용 시간 또는 이용 기간을 충전합니다. 이용권이 없으면 이용할 서비스를 선택합니다."),
-    "reserve": ("없음", "자유석 현황을 확인하고 좌석과 이용 시간을 입력하여 예약합니다."),
-    "change": ("없음", "지정석 이용 중 다른 빈 지정석으로 변경합니다."),
-    "log": ("없음", "로그인한 회원의 예약 이력을 출력합니다."),
-    "report": ("좌석 번호 1개", "다른 회원이 이용 중인 좌석에 민원을 신청합니다. 내용을 1~2000자로 입력하면 경고를 부여하며, 세 번째 경고에는 72시간 페널티와 강제 퇴실을 적용합니다."),
-    "quit": ("없음", "일시 입력·로그인·주 프롬프트에서는 프로그램을 종료합니다. 부 프롬프트에서는 진행 중 입력만 취소하고 주 프롬프트로 돌아갑니다. 이미 저장한 내용은 유지됩니다."),
+    "login": {
+        "args": "전화번호 비밀번호",
+        "menu": "시스템에 로그인함",
+        "summary": "시스템에 로그인하는 명령어",
+        "action": "등록된 회원 정보로 로그인합니다.",
+    },
+    "signup": {
+        "args": "전화번호 비밀번호 비밀번호확인",
+        "menu": "시스템에 회원 가입함",
+        "summary": "시스템에 회원 가입하는 명령어",
+        "action": "회원 가입 후 로그인 프롬프트로 돌아갑니다.",
+    },
+    "help": {
+        "args": "없거나 명령어 1개",
+        "menu": "전체 도움말 혹은 명령어별 상세 도움말을 출력함",
+        "summary": "도움말을 출력하는 명령어",
+        "action": "전체 도움말 혹은 명령어별 상세 도움말을 출력합니다.",
+    },
+    "charge": {
+        "args": "없음",
+        "menu": "이용 시간 및 이용 기간을 충전함 이용권이 없는 경우 이용할 서비스를 선택함",
+        "summary": "이용 시간 및 이용 기간을 충전하는 명령어",
+        "action": "이용 시간 및 이용 기간을 충전합니다. 이용권이 없는 경우 이용할 서비스를 선택합니다.",
+    },
+    "reserve": {
+        "args": "없음",
+        "menu": "자유석을 예약함",
+        "summary": "자유석을 예약하는 명령어",
+        "action": "자유석을 예약합니다.",
+    },
+    "change": {
+        "args": "없음",
+        "menu": "지정석을 변경함",
+        "summary": "지정석을 변경하는 명령어",
+        "action": "이용 중인 지정석을 변경합니다.",
+    },
+    "log": {
+        "args": "없음",
+        "menu": "예약 내역을 출력함",
+        "summary": "이용 내역을 조회하는 명령어",
+        "action": "사용자의 이용 내역을 표시합니다.",
+    },
+    "report": {
+        "args": "좌석 번호 1개",
+        "menu": "불량 이용자에 대한 민원을 신청함",
+        "summary": "불량 이용자에 대한 민원을 신청하는 명령어",
+        "action": "다른 회원이 이용 중인 좌석에 대한 민원을 신청합니다.",
+    },
+    "quit": {
+        "args": "없음",
+        "menu": "프로그램을 종료함. 부 프롬프트에서는 주 프롬프트로 돌아감",
+        "summary": "프로그램을 종료하거나 부 프롬프트에서 돌아가는 명령어",
+        "action": "일시 입력, 로그인, 주 프롬프트에서는 프로그램을 종료합니다. 부 프롬프트에서는 주 프롬프트로 돌아갑니다.",
+    },
 }
 
 
 def _print_command_help(groups: Tuple[str, ...]) -> None:
     print("— 명령어 및 인자에 대한 설명 —")
     print("명령어 / 인자 / 설명")
+
     for command in groups:
-        argument, description = HELP_TEXT[command]
-        print(f"{command} / {argument} / {description}")
+        info = HELP_TEXT[command]
+        print(f"{command} / {info['args']} / {info['menu']}")
+
+    print()
 
 
 def print_main_help() -> None:
@@ -908,26 +956,30 @@ def print_login_help() -> None:
 
 
 def cmd_help(store: Store, args: List[str]) -> None:
-    # 로그인 전에는 로그인 안내, 로그인 후에는 주 프롬프트 안내.
     print_menu = print_login_help if store.me is None else print_main_help
+
     if len(args) > 1:
         print("error: 인자가 너무 많습니다. 최대 1개의 명령어만 입력하시오.")
         print_menu()
         return
+
     if not args:
         print_menu()
         return
+
     command = CMD_LOOKUP.get(args[0])
     if command is None:
         print(f'error: “{args[0]}” 명령어는 존재하지 않습니다.')
         print_menu()
         return
-    # 상세 도움말의 인자는 현재 위치와 관계없이 표 1의 모든 명령어를 허용.
-    argument, description = HELP_TEXT[command]
+
+    info = HELP_TEXT[command]
+
     print(command)
-    print("명령어/별칭: " + ", ".join(COMMANDS[command]))
-    print(f"인자: {argument}")
-    print(f"동작: {description}")
+    print(info["summary"])
+    print(f"인자: {info['args']}")
+    print(f"동작: {info['action']}")
+    print()
 
 
 
@@ -969,15 +1021,17 @@ def cmd_change(store: Store, args: List[str]) -> None:
 def cmd_log(store: Store, args: List[str]) -> None:
     if not _no_args(args):
         return
+
     found = False
     for record in store.logs:
         if record.phone != store.me.phone:
             continue
+
         found = True
-        unit = "일" if record.seat.is_select else "시간"
         print(f"사용 좌석: {record.seat.store()} /"
               f"사용 시작 일시: {fmt_datetime(record.start)} /"
-              f"사용 시간: {record.amount}{unit}")
+              f"사용 시간: {record.amount}")
+
     if not found:
         print("이용 내역이 없습니다.")
 
@@ -987,59 +1041,55 @@ def cmd_report(store: Store, args: List[str]) -> None:
     if not args:
         print("error: 민원을 신청 할 좌석 번호(S00~S39, F40~F99)를 입력하시오.")
         return
+
     if len(args) > 1:
         print("error: 인자가 너무 많습니다. 하나의 인자를 입력하시오.")
         return
+
     try:
         seat_no = SeatNo.parse(args[0])
     except (ElemSyntaxError, ElemSemanticError):
         print("error: 좌석 번호 형식(S00~S39, F40~F99)에 맞지 않습니다.")
         return
+
     seat = store.seat_of(seat_no)
     if seat.is_empty:
         print("error: 해당 좌석을 이용중인 사용자가 없습니다.")
         return
+
     if seat.phone == store.me.phone:
         print("error: 본인이 이용중인 좌석입니다.")
         return
 
-    # quit/q이면 QuitSignal이 발생하며 prompt_main()이 처리한다.
-    # strip()하지 않아 민원 내용 원문과 실제 입력 길이를 보존한다.
     content = read_sub("해당 좌석에 대해 민원을 제기할 내용을 작성하시오: ")
     if not 1 <= len(content) <= REPORT_MAX_LEN:
         print(f"error: 민원의 내용은 최소 1자 최대 {REPORT_MAX_LEN}자 입니다.")
         return
 
     target = store.find_user(seat.phone)
-    penalized = target.warn == WARN_LIMIT - 1
-    if penalized:
-        # 계산에 실패해도 회원 상태를 일부만 변경하지 않도록 먼저 계산한다.
-        try:
-            penalty_end = store.now + timedelta(hours=PENALTY_HOURS)
-        except OverflowError:
-            print("error: 페널티 종료 일시가 표현 가능한 날짜 범위를 초과하여 민원을 접수할 수 없습니다.")
-            return
+
+    if target.warn == WARN_LIMIT - 1:
+        penalty_end = store.now + timedelta(hours=PENALTY_HOURS)
+
         target.warn = 0
         target.penalty_end = penalty_end
         store.checkout(target)
     else:
         target.warn += 1
 
-    # 공용 저장 함수가 파일 저장과 사후 무결성 검사를 담당한다.
-    # 성공한 뒤에만 접수 완료를 안내한다. 예약 이력은 추가/변경하지 않는다.
     store.save()
+    print()
     print(f"{seat_no.store()}좌석에 대한 민원 ‘{content}’ 가 접수되었습니다. "
           "해당 회원에게 경고가 부여되었습니다.")
-    if penalized:
-        print(f"경고 한도에 도달하여 강제 퇴실 및 {PENALTY_HOURS}시간 페널티가 적용되었습니다. "
-              f"페널티 종료 일시: {fmt_datetime(target.penalty_end)}")
+    print()
 
 
 def cmd_quit(store: Store, args: List[str]) -> None:
-    # 일시·로그인 프롬프트의 종료와 부 프롬프트의 취소는 기존 코드가 처리한다.
     if args:
         print("error: 프로그램을 종료하려면 quit만을 입력하시오.")
+        print()
         return
+
     sys.exit()
 
 
