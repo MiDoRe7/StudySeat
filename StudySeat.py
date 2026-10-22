@@ -769,7 +769,7 @@ def _add_days(store: Store):    #지정석 시간 연장
             continue
         new_end = rec.end + timedelta(days=days) if days <= SELECT_LIMIT_DAYS else None
         if new_end is None or new_end - store.now > limit:
-            print(f"error: 지정석 이용 종료 일시는 현재 일시로부터 {SELECT_LIMIT_DAYS}일을 초과할 수 없습니다")
+            print(f"error: 지정석 이용 종료 일시는 현재 일시({fmt_datetime(store.now)})로부터 {SELECT_LIMIT_DAYS}일을 초과할 수 없습니다")
             continue
         rec.end = new_end
         store.add_log(me.seat_no, days)
