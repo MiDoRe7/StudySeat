@@ -616,6 +616,9 @@ def prompt_datetime(store: Store) -> None:
         except ElemSemanticError:
             print("error: 실제 존재하는 일시를 입력하시오.")
             continue
+        if candidate > datetime(9998, 12, 31, 23, 59):
+            print("error: 입력가능한 날짜의 상한은 9998-12-31일 입니다.")
+            continue
         if store.last_dt is not None and candidate <= store.last_dt:
             print(f"error: 최종 기록 일시({fmt_datetime(store.last_dt)})보다 늦은 일시를 입력하시오.")
             continue
