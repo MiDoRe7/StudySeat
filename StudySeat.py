@@ -1036,7 +1036,6 @@ def cmd_log(store: Store, args: List[str]) -> None:
               f"사용 시간: {record.amount}")
 
     if not found:
-        print("이용 내역이 없습니다.")
 
 
 
