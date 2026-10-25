@@ -663,6 +663,7 @@ def prompt_login(store: Store) -> None:
         group = CMD_LOOKUP.get(tokens[0]) if tokens else None
         if group not in LOGIN_GROUPS:
             print("error: login, signup, help, quit 중 하나를 입력하시오.")
+            print()
             continue
         args = tokens[1:]
         if group == "quit":
@@ -677,7 +678,7 @@ def prompt_login(store: Store) -> None:
             cmd_signup(store, args)
             continue
         if len(args) != 2:
-            print("error: 전화번호와 비밀번호를 입력하시오.")
+            print("error: 전화번호와 비밀번호를 형식에 맞게 입력하시오.")
             continue
         try:
             phone = Phone.parse(args[0])
