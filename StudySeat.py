@@ -1035,9 +1035,6 @@ def cmd_log(store: Store, args: List[str]) -> None:
               f"사용 시작 일시: {fmt_datetime(record.start)} /"
               f"사용 시간: {record.amount}")
 
-    if not found:
-
-
 
 def cmd_report(store: Store, args: List[str]) -> None:
     if not args:
