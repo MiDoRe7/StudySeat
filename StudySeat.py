@@ -634,7 +634,7 @@ def cmd_signup(store: Store, args: List[str]) -> None:
     try:
         phone = Phone.parse(phone_text)
     except ElemSyntaxError:
-        print(format_error)
+        print("error: 전화번호 혹은 비밀번호가 형식에 맞지 않습니다.")
         return
     if not Password.is_valid(password):
         print("error: 비밀번호는 4~20자로, 영문 대소문자·숫자·특수문자(!@#$%^&*())만 사용할 수 있으며 "
