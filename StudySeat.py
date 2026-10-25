@@ -616,10 +616,6 @@ def prompt_datetime(store: Store) -> None:
         except ElemSemanticError:
             print("error: 실제 존재하는 일시를 입력하시오.")
             continue
-        if candidate.year > 9998:
-            print("error: 입력가능한 날짜의 상한은 9998-12-31일 입니다.")
-            continue
-            
         if store.last_dt is not None and candidate <= store.last_dt:
             print(f"error: 최종 기록 일시({fmt_datetime(store.last_dt)})보다 늦은 일시를 입력하시오.")
             continue
@@ -771,11 +767,10 @@ def _add_days(store: Store):    #지정석 시간 연장
         except ElemSyntaxError:
             print(f"error: 충전 기간은 1 이상의 정수로 입력하시오.")
             continue
-        new_end = rec.end + timedelta(days=days) if days <= SELECT_LIMIT_DAYS else None
-        if new_end is None or new_end - store.now > limit:
+        if days > SELECT_LIMIT_DAYS or (rec.end - store.now) + timedelta(days=days) > limit:
             print(f"error: 지정석 이용 종료 일시는 현재 일시({fmt_datetime(store.now)})로부터 {SELECT_LIMIT_DAYS}일을 초과할 수 없습니다")
             continue
-        rec.end = new_end
+        rec.end = rec.end + timedelta(days=days)
         store.add_log(me.seat_no, days)
         store.save()
         print("기간 연장이 완료되었습니다.")
